@@ -22,7 +22,6 @@ import java.util.Calendar;
 
 public class MainActivity extends Activity implements NowPlaying.Listener {
 
-
     private static final String MAPS = "com.google.android.apps.maps/com.google.android.maps.MapsActivity";
     private static final String EQ = "com.nwd.audioset/.home_horizontalActivity";
     private static final String SETTINGS = "com.android.car.setting/.home_horizontalActivity";
@@ -30,7 +29,6 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private static final long WEATHER_EVERY_MS = 30 * 60 * 1000;
 
     private final Handler handler = new Handler();
-    private final RadioClient radio = new RadioClient();
     private NowPlaying nowPlaying;
 
     private TextView greeting, weatherTemp, weatherDesc, weatherCity, weatherExtra;
@@ -48,7 +46,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     private GradientDrawable oilBg;
     private long lastWeatherFetch;
 
-    private TextView fmBand, fmFreq, fmUnit;
+    private TextView speedValue, speedOdo;
     private ImageView art, playBtn;
     private TextView songSource, songTitle, songArtist;
 
@@ -66,8 +64,8 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
         LinearLayout middle = new LinearLayout(this);
         middle.setOrientation(LinearLayout.VERTICAL);
-        middle.addView(buildClockCard(), vweight(0.62f, 0));
-        middle.addView(buildFmCard(), vweight(1.38f, dp(12)));
+        middle.addView(buildClockCard(), vweight(0.75f, 0));
+        middle.addView(buildSpeedCard(), vweight(1.25f, dp(12)));
         cards.addView(middle, weight(1f, dp(12)));
 
         cards.addView(buildMusicCard(), weight(1.05f, dp(12)));
@@ -76,7 +74,6 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         root.addView(buildDock(), new LinearLayout.LayoutParams(-1, dp(84)));
         setContentView(root);
 
-        radio.bind(this);
         nowPlaying = NowPlaying.get(this);
         createdDark = Ui.isDark(this);
         createdProfile = profileStamp();
@@ -109,8 +106,6 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         greeting.setPadding(0, dp(4), 0, 0);
         card.addView(greeting);
 
-        // The user's own car (photo with background removed); headlights glow when the car's lights are on.
-        // Own photo (shared builds) > bundled car with lights-on variant (owner's build) > icon.
         FrameLayout carBox = new FrameLayout(this);
         car = new ImageView(this);
         car.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -138,7 +133,6 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         clp.setMargins(dp(30), dp(8), dp(30), dp(8));
         card.addView(carBox, clp);
 
-        // Compact weather row: icon + temperature + description, leaving room for the car.
         LinearLayout now = new LinearLayout(this);
         now.setGravity(Gravity.CENTER_VERTICAL);
         weatherIcon = new ImageView(this);
@@ -221,19 +215,16 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         public void onReceive(android.content.Context c, Intent i) {
             android.util.Log.d("CarLights", "ILL broadcast extras=" + i.getExtras());
             showCarLights(i.getByteExtra("extra_ill_state", (byte) 0) != 0);
-            // Auto theme follows the car's lights; give the kernel a moment to store the state.
             handler.postDelayed(() -> { if (Ui.isDark(MainActivity.this) != createdDark) recreate(); }, 1500);
         }
     };
 
-    /** The kernel keeps the light state as bit 2 of mcu_no_source_device_state. */
     private boolean carLightsOn() {
         int state = android.provider.Settings.System.getInt(getContentResolver(), "mcu_no_source_device_state", 0);
         return (state & 2) != 0;
     }
 
     private void showCarLights(boolean on) {
-        // Cross-fade between the "lights off" and "lights on" photos.
         if (!hasLightsImage) return;
         carLights.animate().alpha(on ? 1f : 0f).setDuration(600).start();
         car.animate().alpha(on ? 0f : 1f).setDuration(600).start();
@@ -250,7 +241,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         oilBg.setColor(left < 0 ? 0xCCE53935 : left <= Odometer.WARN_KM ? 0xCCFF9800 : 0x26FFFFFF);
     }
 
-    // ---------- Clock ----------
+    // ---------- Clock (Hora más grande) ----------
 
     private View buildClockCard() {
         LinearLayout card = new LinearLayout(this);
@@ -261,7 +252,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         TextClock time = new TextClock(this);
         time.setFormat24Hour("HH:mm");
         time.setFormat12Hour("hh:mm");
-        time.setTextSize(40);
+        time.setTextSize(62); // Hora aumentada de 40 a 62
         time.setTextColor(Color.WHITE);
         time.setTypeface(Typeface.DEFAULT_BOLD);
         time.setIncludeFontPadding(false);
@@ -271,22 +262,21 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         TextClock date = new TextClock(this);
         date.setFormat24Hour("EEEE, d 'de' MMMM");
         date.setFormat12Hour("EEEE, d 'de' MMMM");
-        date.setTextSize(14);
+        date.setTextSize(15);
         date.setTextColor(0xCCFFFFFF);
-        date.setPadding(0, dp(6), 0, 0);
+        date.setPadding(0, dp(2), 0, 0);
         date.setGravity(Gravity.CENTER);
         card.addView(date);
 
-        // Oil-change status pill; opens the oil screen.
         oilInfo = Ui.text(this, "", 13, Color.WHITE);
-        oilInfo.setPadding(dp(14), dp(6), dp(14), dp(6));
+        oilInfo.setPadding(dp(14), dp(5), dp(14), dp(5));
         oilBg = new GradientDrawable();
         oilBg.setCornerRadius(dp(14));
         oilInfo.setBackground(oilBg);
         Ui.pressable(oilInfo, 0.92f);
         oilInfo.setOnClickListener(v -> startActivity(new Intent(this, OilActivity.class)));
         LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(-2, -2);
-        olp.topMargin = dp(8);
+        olp.topMargin = dp(6);
         card.addView(oilInfo, olp);
 
         Ui.pressable(card, 0.97f);
@@ -294,9 +284,9 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         return card;
     }
 
-    // ---------- FM ----------
+    // ---------- Velocímetro GPS (Reemplaza Radio FM) ----------
 
-    private View buildFmCard() {
+    private View buildSpeedCard() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
@@ -304,61 +294,48 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
 
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER);
-        ImageView radioIcon = new ImageView(this);
-        radioIcon.setImageResource(R.drawable.ic_radio);
-        radioIcon.setColorFilter(0xFFFF9F5A);
-        head.addView(radioIcon, new LinearLayout.LayoutParams(dp(22), dp(22)));
-        fmBand = Ui.text(this, "RADIO FM", 15, Color.WHITE);
-        fmBand.setPadding(dp(8), 0, 0, 0);
-        head.addView(fmBand);
+        ImageView speedIcon = new ImageView(this);
+        speedIcon.setImageResource(R.drawable.ic_compass);
+        speedIcon.setColorFilter(0xFF4FC3F7);
+        head.addView(speedIcon, new LinearLayout.LayoutParams(dp(20), dp(20)));
+        TextView title = Ui.text(this, "VELOCÍMETRO", 14, 0xCCFFFFFF);
+        title.setLetterSpacing(0.08f);
+        title.setPadding(dp(8), 0, 0, 0);
+        head.addView(title);
         card.addView(head);
 
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.CENTER);
-        row.addView(Ui.iconButton(this, R.drawable.ic_prev, 52, false, () -> stationStep(false)),
-                new LinearLayout.LayoutParams(dp(52), dp(52)));
-        fmFreq = Ui.text(this, "--.-", 50, Color.WHITE);
-        fmFreq.setTypeface(Typeface.DEFAULT_BOLD);
-        row.addView(fmFreq, new LinearLayout.LayoutParams(0, -2, 1f));
-        row.addView(Ui.iconButton(this, R.drawable.ic_next, 52, false, () -> stationStep(true)),
-                new LinearLayout.LayoutParams(dp(52), dp(52)));
-        row.setPadding(dp(12), dp(10), dp(12), 0);
-        card.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        speedValue = Ui.text(this, "0", 72, Color.WHITE);
+        speedValue.setTypeface(Typeface.DEFAULT_BOLD);
+        speedValue.setIncludeFontPadding(false);
+        speedValue.setPadding(0, dp(4), 0, 0);
+        card.addView(speedValue);
 
-        fmUnit = Ui.text(this, "MHz", 15, 0x99FFFFFF);
-        card.addView(fmUnit);
+        TextView unit = Ui.text(this, "km/h", 16, 0x99FFFFFF);
+        card.addView(unit);
+
+        speedOdo = Ui.text(this, "", 13, 0xB3FFFFFF);
+        speedOdo.setPadding(0, dp(10), 0, 0);
+        card.addView(speedOdo);
 
         Ui.pressable(card, 0.97f);
-        card.setOnClickListener(v -> openRadio());
+        card.setOnClickListener(v -> startActivity(new Intent(this, OilActivity.class)));
         return card;
     }
 
-    private void stationStep(boolean next) {
-        if (!Profile.isNwd(this)) {
-            openRadio();
-            return;
+    private void updateSpeedometer() {
+        int spd = Odometer.currentSpeed();
+        speedValue.setText(String.valueOf(spd));
+        if (Odometer.isConfigured(this)) {
+            speedOdo.setText("Odómetro: " + OilActivity.fmt(Odometer.currentKm(this)) + " km");
+        } else {
+            speedOdo.setText("GPS activo");
         }
-        if (!Ui.radioIsSource(this)) {
-            Ui.selectRadio(this, radio); // first tap from Bluetooth: bring the radio back
-            handler.postDelayed(this::updateRadio, 2500);
-            return;
-        }
-        radio.preset(next);
-        handler.postDelayed(this::updateRadio, 300);
     }
 
-    private void updateRadio() {
-        RadioClient.Station st = radio.current();
-        if (st == null) return;
-        fmBand.setText(st.psName.isEmpty() ? "RADIO " + st.bandLabel() : st.bandLabel() + " · " + st.psName);
-        fmFreq.setText(st.frequencyLabel());
-        fmUnit.setText(st.isAm() ? "kHz" : "MHz");
-    }
-
-    private final Runnable radioPoll = new Runnable() {
+    private final Runnable speedPoll = new Runnable() {
         public void run() {
-            updateRadio();
-            handler.postDelayed(this, 1000);
+            updateSpeedometer();
+            handler.postDelayed(this, 500);
         }
     };
 
@@ -469,7 +446,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         return dock;
     }
 
-    // ---------- Shortcuts: NWD screens, or the head unit's own apps elsewhere ----------
+    // ---------- Shortcuts ----------
 
     private void openRadio() {
         if (Profile.isNwd(this)) startActivity(new Intent(this, RadioActivity.class));
@@ -504,7 +481,6 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         }
     }
 
-    /** Opens the first installed app whose name or package matches one of the keywords. */
     private boolean launchByKeyword(String... keywords) {
         PackageManager pm = getPackageManager();
         Intent main = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
@@ -553,12 +529,12 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
     protected void onResume() {
         super.onResume();
         if (Ui.isDark(this) != createdDark || !profileStamp().equals(createdProfile)) {
-            // theme (setting, night or car lights) or profile (name, car photo) changed
             recreate();
             return;
         }
         updateGreeting();
         updateOil();
+        updateSpeedometer();
         showWeather(Weather.cached(this));
         registerReceiver(illReceiver, new android.content.IntentFilter("com.nwd.ACTION_ILL_STATE_CHANGE"));
         boolean lights = hasLightsImage && carLightsOn();
@@ -569,7 +545,7 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
             requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
         }
         handler.post(periodic);
-        if (Profile.isNwd(this)) handler.post(radioPoll);
+        handler.post(speedPoll);
         nowPlaying.addListener(this);
         onNowPlayingChanged();
     }
@@ -579,19 +555,16 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         super.onPause();
         unregisterReceiver(illReceiver);
         handler.removeCallbacks(periodic);
-        handler.removeCallbacks(radioPoll);
+        handler.removeCallbacks(speedPoll);
         nowPlaying.removeListener(this);
     }
 
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
-        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) fetchWeather(true);
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        radio.unbind(this);
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            fetchWeather(true);
+            startService(new Intent(this, Odometer.class));
+        }
     }
 
     private TextView left(TextView tv) {
@@ -624,3 +597,4 @@ public class MainActivity extends Activity implements NowPlaying.Listener {
         // Home screen: nothing to go back to.
     }
 }
+ 
