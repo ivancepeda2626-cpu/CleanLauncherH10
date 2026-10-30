@@ -11,19 +11,20 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.util.Log;
 
 /**
- * GPS odometer for the oil-change reminder (the car's CAN box does not report mileage).
- *
- * The user sets the dashboard reading once; from then on distance between good GPS fixes
- * is added. Fixes while parked or with poor accuracy are ignored so drift does not count.
+ * GPS odometer and live speedometer.
  */
 public class Odometer extends Service implements LocationListener {
 
     private static final String TAG = "Odometer";
     static final int DEFAULT_INTERVAL_KM = 5000;
     static final int WARN_KM = 500;
+
+    private static volatile int currentSpeedKmh = 0;
+    private static volatile long lastSpeedTime = 0;
 
     private LocationManager lm;
     private Location last;
@@ -35,7 +36,8 @@ public class Odometer extends Service implements LocationListener {
         lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             try {
-                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 10, this);
+                // Actualización cada 1 segundo (1000ms) y 0 metros para velocímetro en tiempo real
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0, this);
             } catch (Exception e) {
                 Log.w(TAG, "no GPS", e);
             }
@@ -50,15 +52,32 @@ public class Odometer extends Service implements LocationListener {
     @Override
     public void onLocationChanged(Location l) {
         if (!l.hasAccuracy() || l.getAccuracy() > 25) return;
-        if (last != null) {
+
+        float kmh = 0;
+        if (l.hasSpeed()) {
+            kmh = l.getSpeed() * 3.6f;
+        } else if (last != null) {
             float d = last.distanceTo(l);
             float secs = Math.max(1, (l.getTime() - last.getTime()) / 1000f);
-            float kmh = d / secs * 3.6f;
-            boolean moving = (l.hasSpeed() ? l.getSpeed() * 3.6f : kmh) > 4;
-            // Count only real driving; drop parked drift and impossible jumps.
-            if (moving && kmh < 200) pendingMeters += d;
+            kmh = d / secs * 3.6f;
         }
-        last = l;
+
+        // Filtro para evitar que marque 1 o 2 km/h estando quieto
+        currentSpeedKmh = (kmh < 3f || kmh > 240f) ? 0 : Math.round(kmh);
+        lastSpeedTime = SystemClock.elapsedRealtime();
+
+        if (last != null) {
+            float d = last.distanceTo(l);
+            boolean moving = kmh > 4;
+            // Count only real driving; drop parked drift and impossible jumps.
+            if (moving && kmh < 200 && d >= 5) {
+                pendingMeters += d;
+                last = l;
+            }
+        } else {
+            last = l;
+        }
+
         if (pendingMeters >= 100) { // persist every 100 m
             SharedPreferences p = prefs(this);
             p.edit().putFloat("gps_km", p.getFloat("gps_km", 0) + pendingMeters / 1000f).apply();
@@ -66,9 +85,17 @@ public class Odometer extends Service implements LocationListener {
         }
     }
 
+    /** Devuelve la velocidad actual en km/h (vuelve a 0 si lleva más de 4s sin señal en movimiento). */
+    static int currentSpeed() {
+        if (SystemClock.elapsedRealtime() - lastSpeedTime > 4000) return 0;
+        return currentSpeedKmh;
+    }
+
     public void onStatusChanged(String p, int s, Bundle b) { }
     public void onProviderEnabled(String p) { }
-    public void onProviderDisabled(String p) { }
+    public void onProviderDisabled(String p) {
+        currentSpeedKmh = 0;
+    }
 
     @Override
     public void onDestroy() {
